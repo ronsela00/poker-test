@@ -161,7 +161,7 @@ if registration_open:
     elif len(players) == 7:
         st.info("\u23F3 תמהר כי נשאר מקום אחרון!")
 
-st.subheader("\U0001F46E שחקנים רשומים:")
+st.subheader("👥 שחקנים רשומים:")
 if players:
     for i, (name, ts) in enumerate(players, start=1):
         if i <= 7:
