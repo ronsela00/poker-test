@@ -18,7 +18,7 @@ weekday_hebrew = {
 DB_FILE = "players.db"
 LAST_RESET_FILE = "last_reset.txt"
 LAST_PLAYERS_FILE = "last_players.txt"
-MAX_PLAYERS = 7
+MAX_PLAYERS = 8
 MIN_PLAYERS = 5
 ISRAEL_TZ = pytz.timezone("Asia/Jerusalem")
 
@@ -40,7 +40,7 @@ def register_player(name):
     c = conn.cursor()
     try:
         now_dt = datetime.now(ISRAEL_TZ)
-timestamp = f"{weekday_hebrew[now_dt.strftime('%A')]} {now_dt.strftime('%H:%M')}"
+        timestamp = f"{weekday_hebrew[now_dt.strftime('%A')]} {now_dt.strftime('%H:%M')}"
         c.execute("INSERT INTO registered (name, timestamp) VALUES (?, ?)", (name, timestamp))
         conn.commit()
         return True
