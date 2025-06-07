@@ -1,6 +1,6 @@
 import streamlit as st
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 import os
 import json
@@ -19,7 +19,8 @@ def init_db():
     c = conn.cursor()
     c.execute("""
         CREATE TABLE IF NOT EXISTS registered (
-            name TEXT PRIMARY KEY
+            name TEXT PRIMARY KEY,
+            timestamp TEXT
         )
     """)
     conn.commit()
@@ -29,7 +30,8 @@ def register_player(name):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     try:
-        c.execute("INSERT INTO registered (name) VALUES (?)", (name,))
+        timestamp = datetime.now(ISRAEL_TZ).strftime("%Y-%m-%d %H:%M")
+        c.execute("INSERT INTO registered (name, timestamp) VALUES (?, ?)", (name, timestamp))
         conn.commit()
         return True
     except sqlite3.IntegrityError:
@@ -47,8 +49,8 @@ def unregister_player(name):
 def get_registered_players():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute("SELECT name FROM registered")
-    players = [row[0] for row in c.fetchall()]
+    c.execute("SELECT name, timestamp FROM registered")
+    players = c.fetchall()
     conn.close()
     return players
 
@@ -62,7 +64,7 @@ def reset_registered():
 # ===== ניהול תיעוד שחקנים =====
 def save_last_players(players):
     with open(LAST_PLAYERS_FILE, "w") as f:
-        for name in players:
+        for name, _ in players:
             f.write(name + "\n")
 
 def load_last_players():
@@ -84,18 +86,22 @@ def get_player(name, all_players):
             return p
     return None
 
-def dev_testing_registration_open(now):
-    cycle_minutes = 8
-    open_minutes = 5
-    minutes = now.minute % cycle_minutes
-    return minutes < open_minutes
+def is_registration_open(now):
+    weekday = now.weekday()
+    hour = now.hour
+    if weekday == 4 and hour >= 18:
+        return True
+    if weekday == 5 or weekday == 6:
+        return True
+    if weekday == 0 and hour < 22:
+        return True
+    return False
 
 def is_new_registration_period(now):
     if not os.path.exists(LAST_RESET_FILE):
         with open(LAST_RESET_FILE, "w") as f:
             f.write(now.strftime("%Y-%m-%d %H:%M"))
         return True
-
     try:
         with open(LAST_RESET_FILE, "r") as f:
             last_reset_str = f.read().strip()
@@ -104,9 +110,11 @@ def is_new_registration_period(now):
         with open(LAST_RESET_FILE, "w") as f:
             f.write(now.strftime("%Y-%m-%d %H:%M"))
         return True
-
-    delta = now - last_reset.replace(tzinfo=now.tzinfo)
-    if delta.total_seconds() > 480:
+    last_reset = last_reset.replace(tzinfo=now.tzinfo)
+    this_friday = now.replace(hour=18, minute=0, second=0, microsecond=0)
+    while this_friday.weekday() != 4:
+        this_friday -= timedelta(days=1)
+    if last_reset < this_friday <= now:
         with open(LAST_RESET_FILE, "w") as f:
             f.write(now.strftime("%Y-%m-%d %H:%M"))
         return True
@@ -117,18 +125,17 @@ init_db()
 now = datetime.now(ISRAEL_TZ)
 all_players = get_allowed_players()
 players = get_registered_players()
-registration_open = dev_testing_registration_open(now)
+registration_open = is_registration_open(now)
 
 if is_new_registration_period(now):
     save_last_players(players)
     reset_registered()
     players = []
-    # רישום אוטומטי לשחקני עדיפות
     priority_players = get_priority_players(all_players, load_last_players())
     for p_name in priority_players:
         if len(players) < MAX_PLAYERS:
             if register_player(p_name):
-                players.append(p_name)
+                players.append((p_name, datetime.now(ISRAEL_TZ).strftime("%Y-%m-%d %H:%M")))
 
 # ===== ממשק =====
 st.title("\U0001F0CF\U0001F4B0 טורניר הפוקר השבועי")
@@ -144,11 +151,11 @@ if registration_open:
 
 st.subheader("\U0001F46E שחקנים רשומים:")
 if players:
-    for i, name in enumerate(players, start=1):
+    for i, (name, ts) in enumerate(players, start=1):
         if i <= 7:
-            st.write(f"{i}. {name}")
+            st.write(f"{i}. {name} – {ts}")
         elif i == 8:
-            st.markdown(f"<div style='background-color:#fff3cd;padding:5px;border-radius:5px;color:#856404;'><b>{i}. {name} (מזמין)</b></div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='background-color:#fff3cd;padding:5px;border-radius:5px;color:#856404;'><b>{i}. {name} (מזמין) – {ts}</b></div>", unsafe_allow_html=True)
 else:
     st.info("אין נרשמים עדיין.")
 
@@ -175,7 +182,7 @@ if st.button("שלח"):
         st.warning("יש להזין שם וקוד.")
     else:
         allowed_player = get_player(name, all_players)
-        is_registered = name in players
+        is_registered = name in [p[0] for p in players]
 
         if action == "להירשם למשחק":
             if not registration_open:
