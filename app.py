@@ -6,10 +6,19 @@ import os
 import json
 
 # ===== הגדרות =====
+weekday_hebrew = {
+    'Sunday': 'ראשון',
+    'Monday': 'שני',
+    'Tuesday': 'שלישי',
+    'Wednesday': 'רביעי',
+    'Thursday': 'חמישי',
+    'Friday': 'שישי',
+    'Saturday': 'שבת'
+}
 DB_FILE = "players.db"
 LAST_RESET_FILE = "last_reset.txt"
 LAST_PLAYERS_FILE = "last_players.txt"
-MAX_PLAYERS = 8
+MAX_PLAYERS = 7
 MIN_PLAYERS = 5
 ISRAEL_TZ = pytz.timezone("Asia/Jerusalem")
 
@@ -30,7 +39,8 @@ def register_player(name):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     try:
-        timestamp = datetime.now(ISRAEL_TZ).strftime("%Y-%m-%d %H:%M")
+        now_dt = datetime.now(ISRAEL_TZ)
+timestamp = f"{weekday_hebrew[now_dt.strftime('%A')]} {now_dt.strftime('%H:%M')}"
         c.execute("INSERT INTO registered (name, timestamp) VALUES (?, ?)", (name, timestamp))
         conn.commit()
         return True
@@ -135,7 +145,9 @@ if is_new_registration_period(now):
     for p_name in priority_players:
         if len(players) < MAX_PLAYERS:
             if register_player(p_name):
-                players.append((p_name, datetime.now(ISRAEL_TZ).strftime("%Y-%m-%d %H:%M")))
+                now_dt = datetime.now(ISRAEL_TZ)
+                hebrew_ts = f"{weekday_hebrew[now_dt.strftime('%A')]} {now_dt.strftime('%H:%M')}"
+                players.append((p_name, hebrew_ts))
 
 # ===== ממשק =====
 st.title("\U0001F0CF\U0001F4B0 טורניר הפוקר השבועי")
