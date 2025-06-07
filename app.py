@@ -96,15 +96,21 @@ def is_new_registration_period(now):
             f.write(now.strftime("%Y-%m-%d %H:%M"))
         return True
 
-    with open(LAST_RESET_FILE, "r") as f:
-        last_reset = datetime.strptime(f.read(), "%Y-%m-%d %H:%M")
+    try:
+        with open(LAST_RESET_FILE, "r") as f:
+            last_reset = datetime.strptime(f.read().strip(), "%Y-%m-%d %H:%M")
+    except ValueError:
+        # תאריך לא תקין — נאתחל
+        with open(LAST_RESET_FILE, "w") as f:
+            f.write(now.strftime("%Y-%m-%d %H:%M"))
+        return True
 
-    # מחזור חדש כל 8 דקות
-    if (now - last_reset).total_seconds() > 480:
+    if (now - last_reset).total_seconds() > 480:  # 8 דקות
         with open(LAST_RESET_FILE, "w") as f:
             f.write(now.strftime("%Y-%m-%d %H:%M"))
         return True
     return False
+
 
 # ===== התחלה =====
 init_db()
