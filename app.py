@@ -10,7 +10,7 @@ DB_FILE = "players.db"
 LAST_RESET_FILE = "last_reset.txt"
 LAST_PLAYERS_FILE = "last_players.txt"
 MAX_PLAYERS = 8
-MIN_PLAYERS = 6
+MIN_PLAYERS = 5
 ISRAEL_TZ = pytz.timezone("Asia/Jerusalem")
 
 # ===== פונקציות מסד נתונים =====
@@ -145,7 +145,10 @@ if registration_open:
 st.subheader("\U0001F46E שחקנים רשומים:")
 if players:
     for i, name in enumerate(players, start=1):
-        st.write(f"{i}. {name}")
+        if i <= 7:
+            st.write(f"{i}. {name}")
+        elif i == 8:
+            st.markdown(f"<div style='background-color:#fff3cd;padding:5px;border-radius:5px;color:#856404;'><b>{i}. {name} (מזמין)</b></div>", unsafe_allow_html=True)
 else:
     st.info("אין נרשמים עדיין.")
 
