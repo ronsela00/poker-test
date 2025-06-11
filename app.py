@@ -72,7 +72,7 @@ def log_reset_time(now):
     sheets = get_sheets()
     sheet = sheets["reset"]
     sheet.append_row([now.strftime("%Y-%m-%d %H:%M")])
-    sheet.update_acell("B1", now.strftime("%Y-%m-%d %H:%M"))  # שמירה של האיפוס האחרון
+    sheet.update_acell("B1", now.strftime("%Y-%m-%d %H:%M"))
 
 def get_last_reset_time():
     sheet = get_sheets()["reset"]
@@ -98,15 +98,9 @@ def get_priority_players(all_players, last_players):
     return [p["name"] for p in all_players if p["name"] not in last_players]
 
 def is_registration_open(now):
-    weekday = now.weekday()
-    hour = now.hour
-    if weekday == 4 and hour >= 18:
-        return True
-    if weekday == 5 or weekday == 6:
-        return True
-    if weekday == 0 and hour < 22:
-        return True
-    return False
+    # פתיחה אוטומטית כל 3 דקות למשך 3 דקות
+    minute = now.minute
+    return (minute % 6) < 3
 
 def is_new_registration_period(now):
     last_reset = get_last_reset_time()
