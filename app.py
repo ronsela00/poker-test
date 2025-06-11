@@ -1,4 +1,3 @@
-# ===== קוד מלא כולל הרשמה ספונטנית =====
 import streamlit as st
 from datetime import datetime, timedelta
 import pytz
@@ -6,17 +5,21 @@ import json
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
-# ===== הגדרות כלליות =====
+# ===== הגדרות =====
 weekday_hebrew = {
-    'Sunday': 'ראשון', 'Monday': 'שני', 'Tuesday': 'שלישי',
-    'Wednesday': 'רביעי', 'Thursday': 'חמישי',
-    'Friday': 'שישי', 'Saturday': 'שבת'
+    'Sunday': 'ראשון',
+    'Monday': 'שני',
+    'Tuesday': 'שלישי',
+    'Wednesday': 'רביעי',
+    'Thursday': 'חמישי',
+    'Friday': 'שישי',
+    'Saturday': 'שבת'
 }
 MAX_PLAYERS = 8
 MIN_PLAYERS = 5
 ISRAEL_TZ = pytz.timezone("Asia/Jerusalem")
 
-# ===== הגדרות גליונות =====
+# ===== Google Sheets =====
 def get_sheets():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     creds = ServiceAccountCredentials.from_json_keyfile_dict(json.loads(st.secrets["GOOGLE_SHEETS_CREDENTIALS"]), scope)
@@ -25,51 +28,51 @@ def get_sheets():
     return {
         "current": sheet.worksheet("Current"),
         "last": sheet.worksheet("Last"),
-        "reset": sheet.worksheet("ResetLog"),
-        "spontaneous": sheet.worksheet("Spontaneous")
+        "reset": sheet.worksheet("ResetLog")
     }
 
+def get_registered_players():
+    sheet = get_sheets()["current"]
+    rows = sheet.get_all_values()[1:]
+    return [(row[0], row[1]) for row in rows if len(row) >= 2]
+
+def register_player(name):
+    now_dt = datetime.now(ISRAEL_TZ)
+    timestamp = f"{weekday_hebrew[now_dt.strftime('%A')]} {now_dt.strftime('%H:%M')}"
+    players = get_registered_players()
+    players.append((name, timestamp))
+    sync_players_to_sheet(players, "current")
+    return True
+
+def unregister_player(name):
+    players = get_registered_players()
+    updated = [p for p in players if p[0] != name]
+    sync_players_to_sheet(updated, "current")
+
+def reset_registered():
+    sync_players_to_sheet([], "current")
+
 def sync_players_to_sheet(players, sheet_name):
-    sheet = get_sheets()[sheet_name]
+    sheets = get_sheets()
+    sheet = sheets[sheet_name]
     sheet.clear()
     sheet.append_row(["name", "timestamp"])
     for name, ts in players:
         sheet.append_row([name, ts])
 
-def get_registered_players_from_sheet(sheet_name):
-    sheet = get_sheets()[sheet_name]
-    rows = sheet.get_all_values()[1:]
-    return [(row[0], row[1]) for row in rows if len(row) >= 2]
-
-# ===== הרשמה וניהול =====
-def register_player(name, spontaneous=False):
-    now_dt = datetime.now(ISRAEL_TZ)
-    timestamp = f"{weekday_hebrew[now_dt.strftime('%A')]} {now_dt.strftime('%H:%M')}"
-    sheet_name = "spontaneous" if spontaneous else "current"
-    players = get_registered_players_from_sheet(sheet_name)
-    players.append((name, timestamp))
-    sync_players_to_sheet(players, sheet_name)
-    return True
-
-def unregister_player(name, spontaneous=False):
-    sheet_name = "spontaneous" if spontaneous else "current"
-    players = get_registered_players_from_sheet(sheet_name)
-    updated = [p for p in players if p[0] != name]
-    sync_players_to_sheet(updated, sheet_name)
-
-def reset_registered():
-    sync_players_to_sheet([], "current")
-
 def load_last_players_from_sheet():
-    return [row[0] for row in get_registered_players_from_sheet("last")]
+    sheet = get_sheets()["last"]
+    rows = sheet.get_all_values()[1:]
+    return [row[0] for row in rows if len(row) >= 1]
 
 def save_last_players(players):
     sync_players_to_sheet(players, "last")
 
 def log_reset_time(now):
-    sheet = get_sheets()["reset"]
+    sheets = get_sheets()
+    sheet = sheets["reset"]
     sheet.append_row([now.strftime("%Y-%m-%d %H:%M")])
-    sheet.update_acell("B1", now.strftime("%Y-%m-%d %H:%M"))
+    sheet.update_acell("B1", now.strftime("%Y-%m-%d %H:%M"))  # שמירה של האיפוס האחרון
 
 def get_last_reset_time():
     sheet = get_sheets()["reset"]
@@ -81,6 +84,7 @@ def get_last_reset_time():
         pass
     return None
 
+# ===== עזר =====
 def get_allowed_players():
     return json.loads(st.secrets["players"])
 
@@ -98,7 +102,7 @@ def is_registration_open(now):
     hour = now.hour
     if weekday == 4 and hour >= 18:
         return True
-    if weekday in [5, 6]:
+    if weekday == 5 or weekday == 6:
         return True
     if weekday == 0 and hour < 22:
         return True
@@ -120,33 +124,23 @@ def is_new_registration_period(now):
 # ===== התחלה =====
 now = datetime.now(ISRAEL_TZ)
 all_players = get_allowed_players()
+players = get_registered_players()
 registration_open = is_registration_open(now)
 
 if is_new_registration_period(now):
     log_reset_time(now)
-    save_last_players(get_registered_players_from_sheet("current"))
+    save_last_players(players)
     reset_registered()
+    players = []
     priority_players = get_priority_players(all_players, load_last_players_from_sheet())
     for p_name in priority_players:
-        if len(get_registered_players_from_sheet("current")) < MAX_PLAYERS:
+        if len(players) < MAX_PLAYERS:
+            now_dt = datetime.now(ISRAEL_TZ)
+            hebrew_ts = f"{weekday_hebrew[now_dt.strftime('%A')]} {now_dt.strftime('%H:%M')}"
             register_player(p_name)
 
-# ===== Streamlit UI =====
-st.session_state.setdefault("spontaneous_mode", False)
+# ===== ממשק =====
 st.title("\U0001F0CF\U0001F4B0 טורניר הפוקר השבועי")
-
-if st.button("✨ פתח רישום ספונטני"):
-    st.session_state["spontaneous_mode"] = True
-    sheets = get_sheets()
-    sheets["spontaneous"].clear()
-    now_dt = datetime.now(ISRAEL_TZ)
-    starter = st.text_input("מי פתח את ההרשמה?", key="starter_name")
-    if starter:
-        sheets["spontaneous"].append_row([f"{starter} (פותח)", f"{weekday_hebrew[now_dt.strftime('%A')]} {now_dt.strftime('%H:%M')}"])
-
-spontaneous = st.session_state["spontaneous_mode"]
-sheet_name = "spontaneous" if spontaneous else "current"
-players = get_registered_players_from_sheet(sheet_name)
 
 if registration_open:
     st.subheader("\U0001F4E2 מצב נוכחי:")
@@ -157,13 +151,13 @@ if registration_open:
     elif len(players) == 7:
         st.info("\u23F3 תמהר כי נשאר מקום אחרון!")
 
-st.subheader("⭐ הרשמה ספונטנית פעילה:" if spontaneous else "👥 שחקנים רשומים:")
+st.subheader("👥 שחקנים רשומים:")
 if players:
     for i, (name, ts) in enumerate(players, start=1):
-        if "(פותח)" in name:
-            st.markdown(f"<div style='background-color:#e8f0fe;padding:6px;border-radius:5px;'><b>⭐ {name} – {ts}</b></div>", unsafe_allow_html=True)
-        else:
+        if i <= 7:
             st.write(f"{i}. {name} – {ts}")
+        elif i == 8:
+            st.markdown(f"<div style='background-color:#fff3cd;padding:5px;border-radius:5px;color:#856404;'><b>{i}. {name} (מזמין) – {ts}</b></div>", unsafe_allow_html=True)
 else:
     st.info("אין נרשמים עדיין.")
 
@@ -172,12 +166,11 @@ if registration_open:
 else:
     st.markdown("<div style='background-color:#f8d7da;padding:10px;border-radius:5px;color:#721c24;'>\u274C ההרשמה סגורה כרגע.</div>", unsafe_allow_html=True)
 
-if not spontaneous:
-    priority_players = get_priority_players(all_players, load_last_players_from_sheet())
-    if registration_open and priority_players:
-        st.markdown("\U0001F3AF <b>שחקנים שפספסו בפעם הקודמת:</b>", unsafe_allow_html=True)
-        for p in priority_players:
-            st.write(f"– {p}")
+priority_players = get_priority_players(all_players, load_last_players_from_sheet())
+if registration_open and priority_players:
+    st.markdown("\U0001F3AF <b>שחקנים שפספסו בפעם הקודמת:</b>", unsafe_allow_html=True)
+    for p in priority_players:
+        st.write(f"– {p}")
 
 st.markdown("---")
 st.header("\U0001F4CA טופס פעולה")
@@ -202,10 +195,10 @@ if st.button("שלח"):
                 st.error("קוד אישי שגוי.")
             elif is_registered:
                 st.info("כבר נרשמת.")
-            elif not spontaneous and len(players) >= MAX_PLAYERS:
+            elif len(players) >= MAX_PLAYERS:
                 st.error("המשחק מלא.")
             else:
-                if register_player(name, spontaneous=spontaneous):
+                if register_player(name):
                     st.success(f"{name} נרשמת בהצלחה!")
                 else:
                     st.error("שגיאה בהרשמה.")
@@ -218,5 +211,5 @@ if st.button("שלח"):
             elif not is_registered:
                 st.info("אתה לא רשום כרגע.")
             else:
-                unregister_player(name, spontaneous=spontaneous)
+                unregister_player(name)
                 st.success("הוסרת מהרשימה.")
